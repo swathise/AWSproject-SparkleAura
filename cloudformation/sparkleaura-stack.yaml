@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  SparkleAura – Jewelry E-Commerce Platform
+  EC2 + ALB + AutoScaling + RDS + Lambda using existing VPC & subnets.
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: Existing VPC ID (from Terraform output vpc_id)
+
+  PublicSubnet1Id:
+    Type: String
+    Description: First public subnet ID (Terraform output public_subnet_id)
+
+  PublicSubnet2Id:
+    Type: String
+    Description: Second public subnet ID (Terraform output public_subnet2_id)
+
+  PrivateSubnet1Id:
+    Type: String
+    Description: First private subnet ID (Terraform output private_subnet_id)
+
+  PrivateSubnet2Id:
+    Type: String
+    Description: Second private subnet ID (Terraform output private_subnet2_id)
+
+  ALBSecurityGroupId:
+    Type: String
+    Description: ALB security group ID (from Terraform output alb_sg_id)
+
+  EC2SecurityGroupId:
+    Type: String
+    Description: EC2 security group ID (from Terraform output ec2_sg_id)
+
+  RDSSecurityGroupId:
+    Type: String
+    Description: RDS security group ID (from Terraform output rds_sg_id)
+
+  KeyName:
+    Type: String
+    Description: Existing EC2 key pair name for SSH
+
+  DBUsername:
+    Type: String
+    Default: dbadmin
+    NoEcho: true
+    Description: Master username for the RDS database
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Master password for the RDS database
+    MinLength: 8
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0c02fb55956c7d316
+
+Resources:
+
+  ######################################
+  # Launch Template for Web Servers
+  ######################################
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: sparkleauralt
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+        InstanceType: t2.micro
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroupId
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y httpd
+            systemctl enable httpd
+            systemctl start httpd
+            cat << 'EOF' > /var/www/html/index.html
+            <html>
+            <head><title>SparkleAura Jewelry</title></head>
+            <body>
+              <h1>Welcome to SparkleAura Jewelry Store ✨</h1>
+              <p>A scalable fashion & jewelry e-commerce platform running on AWS.</p>
+              <ul>
+                <li>Auto-scaled EC2 web servers behind an Application Load Balancer</li>
+                <li>MySQL database hosted on Amazon RDS</li>
+                <li>S3 + Lambda for logging uploads</li>
+              </ul>
+            </body>
+            </html>
+            EOF
+
+  ######################################
+  # Target Group for ALB
+  ######################################
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: sparkleaura-tg
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: '200'
+
+  ######################################
+  # Application Load Balancer (2 public subnets)
+  ######################################
+  WebALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: sparkleaura-alb
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref ALBSecurityGroupId
+      Subnets:
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+
+  WebALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref WebALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+  ######################################
+  # Auto Scaling Group (2 public subnets)
+  ######################################
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+      MinSize: "1"
+      MaxSize: "3"
+      DesiredCapacity: "1"
+      TargetGroupARNs:
+        - !Ref WebTargetGroup
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+
+  ######################################
+  # RDS Subnet Group & DB Instance (2 private subnets)
+  ######################################
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: SparkleAura DB subnet group
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+
+  SparkleAuraDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: sparkleaura-db
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      MultiAZ: false
+      DeletionProtection: false
+
+  ######################################
+  # IAM Role & Policy for Lambda
+  ######################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sparkleaura-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ######################################
+  # Lambda Function for logging S3 uploads
+  ######################################
+  S3LoggingLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sparkleaura-s3-logger
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              print("S3 Event received:")
+              print(json.dumps(event))
+              return {"statusCode": 200, "body": "Logged S3 event"}
+
+Outputs:
+  LoadBalancerDNSName:
+    Description: Public DNS name of the SparkleAura ALB
+    Value: !GetAtt WebALB.DNSName
+
+  DBEndpoint:
+    Description: Endpoint of the SparkleAura RDS instance
+    Value: !GetAtt SparkleAuraDB.Endpoint.Address
+
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref S3LoggingLambda
