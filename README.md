@@ -70,7 +70,7 @@ sparkleaura-aws-project/
 
 
 
-🏗 1. Architecture Overview
+1. Architecture Overview
 
 The architecture includes:
 
@@ -176,7 +176,7 @@ Retrieve EC2 metadata
 
 
 
-🧩 2. Terraform – Networking Deployment
+ 2. Terraform – Networking Deployment
 
 Files:
 
@@ -242,7 +242,7 @@ private\_subnet2\_id = "subnet-xxx"
 
 
 
-☁️ 3. CloudFormation – Compute, RDS, and Lambda
+ 3. CloudFormation – Compute, RDS, and Lambda
 
 File:
 
@@ -286,7 +286,7 @@ aws cloudformation deploy \\
 
 
 
-🐍 4. Python Boto3 Scripts
+ 4. Python Boto3 Scripts
 
 ✔ 4.1 Create S3 Bucket + Upload File
 
@@ -372,7 +372,7 @@ SparkleAura EC2 Metadata:
 
 
 
-📦 5. S3 → Lambda Logging
+ 5. S3 → Lambda Logging
 
 
 
@@ -410,7 +410,7 @@ You will see an entry like:
 
 
 
-🖥 6. Accessing the Website (ALB)
+ 6. Accessing the Website (ALB)
 
 
 
@@ -430,7 +430,7 @@ You'll see the SparkleAura welcome page served by EC2 instances.
 
 
 
-📚 7. How to Reproduce the Entire Deployment
+ 7. How to Reproduce the Entire Deployment
 
 1\. Deploy networking (Terraform)
 
@@ -480,7 +480,7 @@ Upload any file → check CloudWatch.
 
 
 
-🧪 8. Screenshots Included
+ 8. Screenshots Included
 
 
 
@@ -516,7 +516,7 @@ EC2 metadata output
 
 
 
-🚀 9. Technologies Used
+ 9. Technologies Used
 
 
 
@@ -563,7 +563,7 @@ Python Boto3
 GitHub
 
 
-🎉 Final Notes
+ Final Notes
 
 
 
